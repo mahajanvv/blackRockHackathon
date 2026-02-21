@@ -96,8 +96,8 @@ public class TemporalFilterServiceTest {
         );
 
         assertEquals(1, result.size());
-        // Q rule should override, P rule should not apply
-        assertEquals(75.0, result.get(0).getFinalRemanent());
+        // Per spec: Q rule overrides first (75), then P rule adds on top (75+25=100)
+        assertEquals(100.0, result.get(0).getFinalRemanent());
     }
 
     @Test

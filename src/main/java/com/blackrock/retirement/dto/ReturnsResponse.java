@@ -1,10 +1,11 @@
 package com.blackrock.retirement.dto;
 
-import com.blackrock.retirement.domain.FinancialProjection;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import java.util.List;
 
 /**
  * Response DTO for NPS/Index returns endpoints
@@ -14,5 +15,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @Builder
 public class ReturnsResponse {
-    private FinancialProjection projection;
+    private Double transactionsTotalAmount;     // Sum of valid transaction amounts
+    private Double transactionsTotalCeiling;    // Sum of valid transaction ceilings
+    private List<SavingsByDate> savingsByDates; // Savings grouped by k periods
 }

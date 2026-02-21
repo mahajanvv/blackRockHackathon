@@ -6,14 +6,16 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * DTO for Q period (override period with fixed amount)
+ * DTO for savings by date period in returns response
  */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class FilterPeriodQ {
-    private Double fixed;           // Fixed override amount
+public class SavingsByDate {
     private String start;           // Start date/time as string (e.g., "2023-10-12 20:15:30")
     private String end;             // End date/time as string (e.g., "2023-10-26 20:15:30")
+    private Double amount;          // Amount saved in this period
+    private Double profit;          // Profit earned in this period
+    private Double taxBenefit;      // Tax benefit (0 for index)
 }

@@ -2,7 +2,8 @@ package com.blackrock.retirement.controller;
 
 import com.blackrock.retirement.dto.*;
 import com.blackrock.retirement.service.PerformanceMonitorService;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.blackrock.retirement.util.TransactionUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,10 +17,10 @@ import java.util.Set;
  */
 @RestController
 @RequestMapping("/blackrock/challenge/v1")
+@RequiredArgsConstructor
 public class ValidatorController {
 
-    @Autowired
-    private PerformanceMonitorService performanceMonitor;
+    private final PerformanceMonitorService performanceMonitor;
 
     /**
      * Validate transactions: filter invalid and duplicates

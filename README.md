@@ -36,11 +36,11 @@ The system handles up to 10^6 transactions and 10^6 temporal constraint periods.
    - Implementation: Linear scan through Q periods per transaction with start date comparison
 
 2. **P Periods (Bonus Rules)**
-   - Applied after Q rules (only if no Q rule applies)
-   - Adds extra amounts to the base remanent
+   - Applied after Q rules, adds bonus on top of Q override (or base remanent if no Q applies)
+   - Adds extra amounts to the final remanent
    - If multiple P periods overlap:
      - **All** overlapping bonuses are **summed**
-   - Implementation: Accumulate all matching period amounts
+   - Implementation: Accumulate all matching period amounts and add to the Q-adjusted or base remanent
 
 3. **K Periods (Grouping Rules)**
    - Groups final remanents into logical time windows
@@ -92,6 +92,21 @@ Uses India's progressive tax slabs:
 **Eligible NPS Deduction**: `min(invested, 10% of wage, ₹2,00,000)`
 
 Tax benefit = Tax without deduction - Tax with deduction
+
+### Code Utilities
+
+#### TransactionUtils
+
+A centralized utility class that eliminates code duplication across services:
+
+- **calculateCeiling(amount)**: Rounds up to nearest whole number
+- **calculateRemanent(amount)**: Computes amount - ceiling (negative value for savings)
+- **parseDate(timestamp)**: Converts Long timestamp to LocalDateTime formatted as "yyyy-MM-dd HH:mm:ss"
+- **formatDate(dateTime)**: Converts LocalDateTime back to formatted string
+- **createTransactionKey(timestamp, amount)**: Generates unique key for duplicate detection
+- **isValidAmount(amount)**: Validates that amount is non-negative
+
+This utility class reduces over 150 lines of duplicate code and ensures consistency across parse, filter, and validation services.
 
 ## Building & Deployment
 
@@ -267,63 +282,124 @@ Applies Q (override), P (bonus), and K (grouping) rules.
 ### 4. Calculate NPS Returns
 **Endpoint**: `POST /blackrock/challenge/v1/returns:nps`
 
-Calculates projection with tax benefits.
+Calculates NPS investment returns with tax benefits. Applies Q/P rules to transactions, groups by K periods, and computes compound returns with inflation adjustment.
 
 **Request**:
 ```json
 {
-  "principal": 100000.0,
-  "age": 30.0,
-  "inflationRate": 0.03,
-  "preTaxSalary": 1500000.0
+  "wage": 1500000.0,
+  "inflation": 0.03,
+  "age": 30,
+  "transactions": [
+    {
+      "timestamp": 1000,
+      "amount": 100.0
+    },
+    {
+      "timestamp": 2000,
+      "amount": 150.0
+    }
+  ],
+  "q": [
+    {
+      "startDate": 1000,
+      "endDate": 2500,
+      "amount": 75.0
+    }
+  ],
+  "p": [
+    {
+      "startDate": 1500,
+      "endDate": 3000,
+      "amount": 25.0
+    }
+  ],
+  "k": [
+    {
+      "startDate": 1000,
+      "endDate": 10000,
+      "kPeriodId": "2024-Q1"
+    }
+  ]
 }
 ```
 
 **Response**:
 ```json
 {
-  "projection": {
-    "principal": 100000.0,
-    "rate": 0.0711,
-    "timeHorizon": 30.0,
-    "age": 30.0,
-    "inflationRate": 0.03,
-    "futureValue": 841234.56,
-    "realValue": 348567.89,
-    "taxBenefit": 15000.0,
-    "projectionType": "NPS"
-  }
+  "transactionsTotalAmount": 250.0,
+  "transactionsTotalCeiling": 250.0,
+  "savingsByDates": [
+    {
+      "start": 1000,
+      "end": 10000,
+      "amount": 200.0,
+      "profit": 86.88,
+      "taxBenefit": 60000.0
+    }
+  ]
 }
 ```
 
 ### 5. Calculate Index Fund Returns
 **Endpoint**: `POST /blackrock/challenge/v1/returns:index`
 
-Calculates projection without tax benefits.
+Calculates index fund investment returns without tax benefits. Applies Q/P rules to transactions, groups by K periods, and computes compound returns with inflation adjustment.
 
 **Request**:
 ```json
 {
-  "principal": 100000.0,
-  "age": 30.0,
-  "inflationRate": 0.03
+  "wage": 1000000.0,
+  "inflation": 0.03,
+  "age": 35,
+  "transactions": [
+    {
+      "timestamp": 1000,
+      "amount": 200.0
+    },
+    {
+      "timestamp": 3000,
+      "amount": 300.0
+    }
+  ],
+  "q": [],
+  "p": [],
+  "k": [
+    {
+      "startDate": 500,
+      "endDate": 5000,
+      "kPeriodId": "2024-Q1"
+    },
+    {
+      "startDate": 5001,
+      "endDate": 10000,
+      "kPeriodId": "2024-Q2"
+    }
+  ]
 }
 ```
 
 **Response**:
 ```json
 {
-  "projection": {
-    "principal": 100000.0,
-    "rate": 0.1449,
-    "timeHorizon": 30.0,
-    "age": 30.0,
-    "inflationRate": 0.03,
-    "futureValue": 3456789.01,
-    "realValue": 1429876.54,
-    "taxBenefit": 0.0,
-    "projectionType": "INDEX"
-  }
+  "transactionsTotalAmount": 500.0,
+  "transactionsTotalCeiling": 500.0,
+  "savingsByDates": [
+    {
+      "start": 500,
+      "end": 5000,
+      "amount": 450.0,
+      "profit": 195.45,
+      "taxBenefit": 0.0
+    },
+    {
+      "start": 5001,
+      "end": 10000,
+      "amount": 50.0,
+      "profit": 21.72,
+      "taxBenefit": 0.0
+    }
+  ]
 }
 ```
 
@@ -335,12 +411,16 @@ Returns system performance metrics.
 **Response**:
 ```json
 {
-  "memoryUsageBytes": 523456789,
-  "threadCount": 23,
-  "executionTimeMs": 245,
-  "timestamp": "2026-02-21T10:30:45"
+  "time": "2026-02-21 16:07:55.498",
+  "threads": 16,
+  "memory": "18.07"
 }
 ```
+
+**Response Fields**:
+- `time` (string): Current timestamp in format "yyyy-MM-dd HH:mm:ss.SSS"
+- `threads` (integer): Number of active threads
+- `memory` (string): Memory usage in MB with format "XXX.XX"
 
 ## Testing
 

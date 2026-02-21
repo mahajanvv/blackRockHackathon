@@ -1,7 +1,15 @@
 package com.blackrock.retirement.service;
 
 import com.blackrock.retirement.domain.FinancialProjection;
+import com.blackrock.retirement.dto.*;
+import com.blackrock.retirement.util.TransactionUtils;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * Service for calculating financial projections (NPS and Index Fund)
@@ -155,5 +163,164 @@ public class FinancialProjectionService {
         }
 
         return tax;
+    }
+
+    /**
+     * Calculate returns with transactions and periods for NPS
+     */
+    public ReturnsResponse calculateReturnsNPS(ReturnsRequest request) {
+        return calculateReturns(request, true);
+    }
+
+    /**
+     * Calculate returns with transactions and periods for Index
+     */
+    public ReturnsResponse calculateReturnsIndex(ReturnsRequest request) {
+        return calculateReturns(request, false);
+    }
+
+    /**
+     * Calculate returns with transactions and periods
+     * @param request The returns request with transactions and periods
+     * @param isNPS true for NPS (with tax benefit), false for Index
+     */
+    private ReturnsResponse calculateReturns(ReturnsRequest request, boolean isNPS) {
+        // Step 1: Validate and filter transactions
+        List<TransactionItem> transactions = request.getTransactions();
+        List<ValidatedTransaction> validTransactions = new ArrayList<>();
+        Set<String> seenKeys = new HashSet<>();
+        double totalAmount = 0.0;
+        double totalCeiling = 0.0;
+        
+        if (transactions != null) {
+            for (TransactionItem tx : transactions) {
+                String key = TransactionUtils.createTransactionKey(tx.getDate(), tx.getAmount());
+                
+                // Skip invalid amounts or duplicates
+                if (!TransactionUtils.isValidAmount(tx.getAmount()) || seenKeys.contains(key)) {
+                    continue;
+                }
+                
+                seenKeys.add(key);
+                LocalDateTime txDate = TransactionUtils.parseDate(tx.getDate());
+                double ceiling = TransactionUtils.calculateCeiling(tx.getAmount());
+                double remanent = TransactionUtils.calculateRemanent(tx.getAmount());
+                
+                validTransactions.add(new ValidatedTransaction(txDate, tx.getAmount(), ceiling, remanent));
+                totalAmount += tx.getAmount();
+                totalCeiling += ceiling;
+            }
+        }
+        
+        // Step 2: Calculate savings by dates for each K period
+        List<SavingsByDate> savingsByDates = new ArrayList<>();
+        
+        if (request.getK() != null && !validTransactions.isEmpty()) {
+            double inflationRate = request.getInflation() / 100.0; // Convert percentage to decimal
+            double rate = isNPS ? NPS_RATE : INDEX_RATE;
+            
+            for (FilterPeriodK kPeriod : request.getK()) {
+                LocalDateTime kStart = TransactionUtils.parseDate(kPeriod.getStart());
+                LocalDateTime kEnd = TransactionUtils.parseDate(kPeriod.getEnd());
+                
+                // Calculate duration in days and convert to years
+                long days = java.time.temporal.ChronoUnit.DAYS.between(kStart, kEnd);
+                double years = days / 365.0;
+                
+                // Calculate amount for this K period
+                double periodAmount = 0.0;
+                
+                for (ValidatedTransaction tx : validTransactions) {
+                    // Check if transaction is within K period
+                    if (!tx.date.isBefore(kStart) && !tx.date.isAfter(kEnd)) {
+                        // Check if transaction is in Q period (if so, skip)
+                        boolean inQPeriod = false;
+                        if (request.getQ() != null) {
+                            for (FilterPeriodQ qPeriod : request.getQ()) {
+                                LocalDateTime qStart = TransactionUtils.parseDate(qPeriod.getStart());
+                                LocalDateTime qEnd = TransactionUtils.parseDate(qPeriod.getEnd());
+                                if (!tx.date.isBefore(qStart) && !tx.date.isAfter(qEnd)) {
+                                    inQPeriod = true;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (!inQPeriod) {
+                            double txRemanent = tx.remanent;
+                            
+                            // Check if transaction is in P period (add bonus)
+                            if (request.getP() != null) {
+                                for (FilterPeriodP pPeriod : request.getP()) {
+                                    LocalDateTime pStart = TransactionUtils.parseDate(pPeriod.getStart());
+                                    LocalDateTime pEnd = TransactionUtils.parseDate(pPeriod.getEnd());
+                                    if (!tx.date.isBefore(pStart) && !tx.date.isAfter(pEnd)) {
+                                        txRemanent += pPeriod.getExtra();
+                                    }
+                                }
+                            }
+                            
+                            periodAmount += txRemanent;
+                        }
+                    }
+                }
+                
+                // Apply NPS cap if needed: min(amount, 10% of wage, ₹2,00,000)
+                double cappedAmount = periodAmount;
+                if (isNPS && request.getWage() != null) {
+                    double maxByPercentage = request.getWage() * MAX_DEDUCTION_PERCENTAGE;
+                    cappedAmount = Math.min(periodAmount, Math.min(maxByPercentage, MAX_NPS_DEDUCTION));
+                }
+                
+                // Calculate profit using compound interest: A = P(1 + r)^t where t = 60 - age
+                // Then adjust for inflation: A_real = A / (1 + inflation)^t
+                double yearsToRetirement = Math.max(5.0, 60.0 - request.getAge());
+                double futureValue = cappedAmount * Math.pow(1 + rate, yearsToRetirement);
+                double realValue = futureValue / Math.pow(1 + inflationRate, yearsToRetirement);
+                double profit = realValue - cappedAmount;
+                
+                // Calculate tax benefit for NPS
+                double taxBenefit = 0.0;
+                if (isNPS && request.getWage() != null && cappedAmount > 0) {
+                    taxBenefit = calculateNPSTaxBenefit(cappedAmount, request.getWage());
+                }
+                
+                // Use capped amount for NPS, uncapped for Index
+                double displayAmount = isNPS ? cappedAmount : periodAmount;
+                
+                SavingsByDate savings = SavingsByDate.builder()
+                        .start(kPeriod.getStart())
+                        .end(kPeriod.getEnd())
+                        .amount(Math.round(displayAmount * 100.0) / 100.0)
+                        .profit(Math.round(profit * 100.0) / 100.0)
+                        .taxBenefit(Math.round(taxBenefit * 100.0) / 100.0)
+                        .build();
+                
+                savingsByDates.add(savings);
+            }
+        }
+        
+        return ReturnsResponse.builder()
+                .transactionsTotalAmount(Math.round(totalAmount * 100.0) / 100.0)
+                .transactionsTotalCeiling(Math.round(totalCeiling * 100.0) / 100.0)
+                .savingsByDates(savingsByDates)
+                .build();
+    }
+    
+    /**
+     * Helper class to hold validated transaction data
+     */
+    private static class ValidatedTransaction {
+        LocalDateTime date;
+        double amount;
+        double ceiling;
+        double remanent;
+        
+        ValidatedTransaction(LocalDateTime date, double amount, double ceiling, double remanent) {
+            this.date = date;
+            this.amount = amount;
+            this.ceiling = ceiling;
+            this.remanent = remanent;
+        }
     }
 }

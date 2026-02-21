@@ -13,8 +13,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @Builder
 public class PerformanceResponse {
-    private Long memoryUsageBytes;      // Current memory usage in bytes
-    private Integer threadCount;        // Current number of active threads
-    private Long executionTimeMs;       // Last operation execution time
-    private String timestamp;           // Response timestamp
+    private String time;       // Timestamp in format "yyyy-MM-dd HH:mm:ss.SSS"
+    private Integer threads;   // Current number of active threads
+    private String memory;     // Memory usage in MB in format "XXX.XX"
 }

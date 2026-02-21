@@ -4,7 +4,8 @@ import com.blackrock.retirement.domain.FilteredTransaction;
 import com.blackrock.retirement.dto.*;
 import com.blackrock.retirement.service.PerformanceMonitorService;
 import com.blackrock.retirement.service.TemporalFilterService;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.blackrock.retirement.util.TransactionUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,13 +18,11 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/blackrock/challenge/v1")
+@RequiredArgsConstructor
 public class FilterController {
 
-    @Autowired
-    private TemporalFilterService filterService;
-
-    @Autowired
-    private PerformanceMonitorService performanceMonitor;
+    private final TemporalFilterService filterService;
+    private final PerformanceMonitorService performanceMonitor;
 
     private static final String DATE_FORMAT = "yyyy-MM-dd HH:mm:ss";
 
@@ -146,6 +145,37 @@ public class FilterController {
                     }
                 }
             }
+            
+            // Step 3.5: Filter out transactions that fall within Q periods
+            List<com.blackrock.retirement.domain.ParsedTransaction> transactionsToExclude = new ArrayList<>();
+            for (com.blackrock.retirement.domain.ParsedTransaction tx : validTransactions) {
+                boolean inQPeriod = false;
+                for (com.blackrock.retirement.domain.TemporalPeriod qPeriod : qPeriods) {
+                    if (tx.getTimestamp() >= qPeriod.getStartDate() && tx.getTimestamp() <= qPeriod.getEndDate()) {
+                        inQPeriod = true;
+                        break;
+                    }
+                }
+                if (inQPeriod) {
+                    transactionsToExclude.add(tx);
+                }
+            }
+            
+            // Remove transactions in Q periods from valid list
+            validTransactions.removeAll(transactionsToExclude);
+            
+            // Also remove corresponding items from validItems
+            Set<Long> excludedTimestamps = transactionsToExclude.stream()
+                    .map(com.blackrock.retirement.domain.ParsedTransaction::getTimestamp)
+                    .collect(Collectors.toSet());
+            validItems.removeIf(item -> {
+                try {
+                    Date date = dateFormat.parse(item.getDate());
+                    return excludedTimestamps.contains(date.getTime());
+                } catch (Exception e) {
+                    return false;
+                }
+            });
 
             List<com.blackrock.retirement.domain.TemporalPeriod> pPeriods = new ArrayList<>();
             if (request.getP() != null) {

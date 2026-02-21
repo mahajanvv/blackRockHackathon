@@ -1,6 +1,7 @@
 package com.blackrock.retirement.service;
 
 import com.blackrock.retirement.domain.ParsedTransaction;
+import com.blackrock.retirement.util.TransactionUtils;
 import org.springframework.stereotype.Service;
 
 /**
@@ -13,7 +14,7 @@ public class TransactionParseService {
      * Parse a transaction: round amount up to nearest 100 and calculate remanent
      */
     public ParsedTransaction parse(Long timestamp, Double amount) {
-        if (amount == null || amount < 0) {
+        if (!TransactionUtils.isValidAmount(amount)) {
             return ParsedTransaction.builder()
                     .timestamp(timestamp)
                     .originalAmount(amount)
@@ -22,8 +23,8 @@ public class TransactionParseService {
                     .build();
         }
 
-        Double ceiling = Math.ceil(amount / 100.0) * 100.0;
-        Double remanent = ceiling - amount;
+        double ceiling = TransactionUtils.calculateCeiling(amount);
+        double remanent = TransactionUtils.calculateRemanent(amount);
 
         return ParsedTransaction.builder()
                 .timestamp(timestamp)

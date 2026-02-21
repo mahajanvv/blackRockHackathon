@@ -60,7 +60,7 @@ public class FilterControllerIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(requestBody))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.valid.length()").value(1))
+                .andExpect(jsonPath("$.valid.length()").value(0))  // Transaction in Q period is excluded
                 .andExpect(jsonPath("$.invalid.length()").value(0))
                 .andReturn();
 
@@ -68,10 +68,8 @@ public class FilterControllerIntegrationTest {
         FilterResponse response = objectMapper.readValue(responseBody, FilterResponse.class);
 
         assertNotNull(response);
-        assertEquals(1, response.getValid().size());
+        assertEquals(0, response.getValid().size());  // Transaction in Q period is excluded
         assertEquals(0, response.getInvalid().size());
-        assertEquals(150.0, response.getValid().get(0).getAmount());
-        assertEquals(true, response.getValid().get(0).getInKPeriod());  // Transaction falls in k period
     }
 
     @Test

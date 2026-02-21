@@ -85,10 +85,16 @@ curl -X POST http://localhost:5477/blackrock/challenge/v1/transactions:filter \
 curl -X POST http://localhost:5477/blackrock/challenge/v1/returns:nps \
   -H "Content-Type: application/json" \
   -d '{
-    "principal": 100000.0,
-    "age": 30.0,
-    "inflationRate": 0.03,
-    "preTaxSalary": 1500000.0
+    "wage": 1500000.0,
+    "inflation": 0.03,
+    "age": 30,
+    "transactions": [
+      {"timestamp": 1000, "amount": 100.0},
+      {"timestamp": 2000, "amount": 150.0}
+    ],
+    "q": [{"startDate": 1000, "endDate": 2500, "amount": 75.0}],
+    "p": [{"startDate": 1500, "endDate": 3000, "amount": 25.0}],
+    "k": [{"startDate": 1000, "endDate": 10000, "kPeriodId": "2024-Q1"}]
   }'
 ```
 
@@ -96,6 +102,15 @@ curl -X POST http://localhost:5477/blackrock/challenge/v1/returns:nps \
 
 ```bash
 curl http://localhost:5477/blackrock/challenge/v1/performance
+```
+
+**Response**:
+```json
+{
+  "time": "2026-02-21 16:07:55.498",
+  "threads": 16,
+  "memory": "18.07"
+}
 ```
 
 ## Running Tests

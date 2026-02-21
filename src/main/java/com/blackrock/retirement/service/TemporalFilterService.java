@@ -36,19 +36,30 @@ public class TemporalFilterService {
             filtered.setTimestamp(tx.getTimestamp());
             filtered.setBaseRemanent(tx.getRemanent());
 
-            // Apply Q periods (Override) - latest start date wins
+            // Step 1: Apply Q periods (Override) - latest start date wins
             Double qOverride = applyQRules(tx.getTimestamp(), qPeriods);
+            double finalRemanent;
+            
             if (qOverride != null) {
                 filtered.setQOverrideAmount(qOverride);
-                filtered.setFinalRemanent(qOverride);
+                finalRemanent = qOverride;
             } else {
-                // Apply P periods (Bonus) - sum all overlapping
-                Double pBonus = applyPRules(tx.getTimestamp(), pPeriods);
-                filtered.setPBonusAmount(pBonus != null ? pBonus : 0.0);
-                filtered.setFinalRemanent(tx.getRemanent() + (pBonus != null ? pBonus : 0.0));
+                finalRemanent = tx.getRemanent();
             }
+            
+            // Step 2: Apply P periods (Bonus) - sum all overlapping and add to current remanent
+            // Per spec: "If both q and p apply, the q override happens first, then the p addition is applied"
+            Double pBonus = applyPRules(tx.getTimestamp(), pPeriods);
+            if (pBonus != null) {
+                filtered.setPBonusAmount(pBonus);
+                finalRemanent += pBonus;
+            } else {
+                filtered.setPBonusAmount(0.0);
+            }
+            
+            filtered.setFinalRemanent(finalRemanent);
 
-            // Apply K periods (Grouping)
+            // Step 3: Apply K periods (Grouping)
             String kGroupId = applyKRules(tx.getTimestamp(), kPeriods);
             filtered.setKGroupPeriodId(kGroupId);
 

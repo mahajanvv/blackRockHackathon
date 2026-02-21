@@ -1,11 +1,10 @@
 package com.blackrock.retirement.controller;
 
-import com.blackrock.retirement.domain.FinancialProjection;
 import com.blackrock.retirement.dto.ReturnsRequest;
 import com.blackrock.retirement.dto.ReturnsResponse;
 import com.blackrock.retirement.service.FinancialProjectionService;
 import com.blackrock.retirement.service.PerformanceMonitorService;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,13 +13,11 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/blackrock/challenge/v1")
+@RequiredArgsConstructor
 public class ReturnsController {
 
-    @Autowired
-    private FinancialProjectionService projectionService;
-
-    @Autowired
-    private PerformanceMonitorService performanceMonitor;
+    private final FinancialProjectionService projectionService;
+    private final PerformanceMonitorService performanceMonitor;
 
     /**
      * Calculate NPS projection with tax benefits
@@ -30,19 +27,10 @@ public class ReturnsController {
     public ResponseEntity<ReturnsResponse> nps(@RequestBody ReturnsRequest request) {
         long startTime = System.currentTimeMillis();
 
-        FinancialProjection projection = projectionService.calculateNPS(
-                request.getPrincipal(),
-                request.getAge(),
-                request.getInflationRate(),
-                request.getPreTaxSalary()
-        );
+        ReturnsResponse response = projectionService.calculateReturnsNPS(request);
 
         long executionTime = System.currentTimeMillis() - startTime;
         performanceMonitor.recordExecutionTime(executionTime);
-
-        ReturnsResponse response = ReturnsResponse.builder()
-                .projection(projection)
-                .build();
 
         return ResponseEntity.ok(response);
     }
@@ -55,18 +43,10 @@ public class ReturnsController {
     public ResponseEntity<ReturnsResponse> index(@RequestBody ReturnsRequest request) {
         long startTime = System.currentTimeMillis();
 
-        FinancialProjection projection = projectionService.calculateIndex(
-                request.getPrincipal(),
-                request.getAge(),
-                request.getInflationRate()
-        );
+        ReturnsResponse response = projectionService.calculateReturnsIndex(request);
 
         long executionTime = System.currentTimeMillis() - startTime;
         performanceMonitor.recordExecutionTime(executionTime);
-
-        ReturnsResponse response = ReturnsResponse.builder()
-                .projection(projection)
-                .build();
 
         return ResponseEntity.ok(response);
     }

@@ -1,7 +1,6 @@
 package com.blackrock.retirement.controller;
 
-import com.blackrock.retirement.dto.ReturnsRequest;
-import com.blackrock.retirement.dto.ReturnsResponse;
+import com.blackrock.retirement.dto.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,6 +9,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+
+import java.util.Arrays;
+import java.util.List;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -32,11 +34,21 @@ public class ReturnsControllerIntegrationTest {
 
     @Test
     public void testNPSReturnsEndpoint() throws Exception {
+        List<TransactionItem> transactions = Arrays.asList(
+                TransactionItem.builder().date("2023-10-12 20:15:30").amount(2512.0).build(),
+                TransactionItem.builder().date("2023-10-13 20:15:30").amount(1500.0).build()
+        );
+
+        List<FilterPeriodK> kPeriods = Arrays.asList(
+                FilterPeriodK.builder().start("2023-10-12 20:15:30").end("2023-10-26 20:15:30").build()
+        );
+
         ReturnsRequest request = ReturnsRequest.builder()
-                .principal(100000.0)
-                .age(30.0)
-                .inflationRate(0.03)
-                .preTaxSalary(1500000.0)
+                .wage(50000.0)
+                .inflation(5.5)
+                .age(29)
+                .transactions(transactions)
+                .k(kPeriods)
                 .build();
 
         String requestBody = objectMapper.writeValueAsString(request);
@@ -45,29 +57,41 @@ public class ReturnsControllerIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(requestBody))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.projection.projectionType").value("NPS"))
-                .andExpect(jsonPath("$.projection.rate").value(0.0711))
+                .andExpect(jsonPath("$.transactionsTotalAmount").exists())
+                .andExpect(jsonPath("$.transactionsTotalCeiling").exists())
+                .andExpect(jsonPath("$.savingsByDates").isArray())
                 .andReturn();
 
         String responseBody = result.getResponse().getContentAsString();
         ReturnsResponse response = objectMapper.readValue(responseBody, ReturnsResponse.class);
 
         assertNotNull(response);
-        assertNotNull(response.getProjection());
-        assertEquals("NPS", response.getProjection().getProjectionType());
-        assertEquals(100000.0, response.getProjection().getPrincipal());
-        assertEquals(0.0711, response.getProjection().getRate(), 0.0001);
-        assertTrue(response.getProjection().getFutureValue() > 100000.0);
-        assertTrue(response.getProjection().getTaxBenefit() >= 0);
+        assertNotNull(response.getTransactionsTotalAmount());
+        assertNotNull(response.getTransactionsTotalCeiling());
+        assertNotNull(response.getSavingsByDates());
+        assertTrue(response.getTransactionsTotalAmount() > 0);
+        assertTrue(response.getTransactionsTotalCeiling() >= response.getTransactionsTotalAmount());
+        assertEquals(1, response.getSavingsByDates().size());
+        assertTrue(response.getSavingsByDates().get(0).getTaxBenefit() >= 0);
     }
 
     @Test
     public void testIndexReturnsEndpoint() throws Exception {
+        List<TransactionItem> transactions = Arrays.asList(
+                TransactionItem.builder().date("2023-10-12 20:15:30").amount(2512.0).build(),
+                TransactionItem.builder().date("2023-10-13 20:15:30").amount(1500.0).build()
+        );
+
+        List<FilterPeriodK> kPeriods = Arrays.asList(
+                FilterPeriodK.builder().start("2023-10-12 20:15:30").end("2023-10-26 20:15:30").build()
+        );
+
         ReturnsRequest request = ReturnsRequest.builder()
-                .principal(100000.0)
-                .age(30.0)
-                .inflationRate(0.03)
-                .preTaxSalary(null)
+                .wage(50000.0)
+                .inflation(5.5)
+                .age(29)
+                .transactions(transactions)
+                .k(kPeriods)
                 .build();
 
         String requestBody = objectMapper.writeValueAsString(request);
@@ -76,38 +100,49 @@ public class ReturnsControllerIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(requestBody))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.projection.projectionType").value("INDEX"))
-                .andExpect(jsonPath("$.projection.rate").value(0.1449))
-                .andExpect(jsonPath("$.projection.taxBenefit").value(0.0))
+                .andExpect(jsonPath("$.transactionsTotalAmount").exists())
+                .andExpect(jsonPath("$.transactionsTotalCeiling").exists())
+                .andExpect(jsonPath("$.savingsByDates").isArray())
                 .andReturn();
 
         String responseBody = result.getResponse().getContentAsString();
         ReturnsResponse response = objectMapper.readValue(responseBody, ReturnsResponse.class);
 
         assertNotNull(response);
-        assertNotNull(response.getProjection());
-        assertEquals("INDEX", response.getProjection().getProjectionType());
-        assertEquals(100000.0, response.getProjection().getPrincipal());
-        assertEquals(0.1449, response.getProjection().getRate(), 0.0001);
-        assertEquals(0.0, response.getProjection().getTaxBenefit());
-        assertTrue(response.getProjection().getFutureValue() > 100000.0);
+        assertNotNull(response.getTransactionsTotalAmount());
+        assertNotNull(response.getTransactionsTotalCeiling());
+        assertNotNull(response.getSavingsByDates());
+        assertTrue(response.getTransactionsTotalAmount() > 0);
+        assertTrue(response.getTransactionsTotalCeiling() >= response.getTransactionsTotalAmount());
+        assertEquals(1, response.getSavingsByDates().size());
+        assertEquals(0.0, response.getSavingsByDates().get(0).getTaxBenefit());
     }
 
     @Test
     public void testNPSWithHigherRate() throws Exception {
         // Index Fund has higher rate (14.49% vs 7.11%)
+        List<TransactionItem> transactions = Arrays.asList(
+                TransactionItem.builder().date("2023-10-12 20:15:30").amount(375.0).build()  // remanent = 25
+        );
+
+        List<FilterPeriodK> kPeriods = Arrays.asList(
+                FilterPeriodK.builder().start("2023-10-12 20:15:30").end("2024-10-12 20:15:30").build()
+        );
+
         ReturnsRequest npsRequest = ReturnsRequest.builder()
-                .principal(100000.0)
-                .age(30.0)
-                .inflationRate(0.03)
-                .preTaxSalary(0.0)
+                .wage(50000.0)
+                .inflation(3.0)
+                .age(30)
+                .transactions(transactions)
+                .k(kPeriods)
                 .build();
 
         ReturnsRequest indexRequest = ReturnsRequest.builder()
-                .principal(100000.0)
-                .age(30.0)
-                .inflationRate(0.03)
-                .preTaxSalary(null)
+                .wage(50000.0)
+                .inflation(3.0)
+                .age(30)
+                .transactions(transactions)
+                .k(kPeriods)
                 .build();
 
         // Calculate NPS
@@ -130,18 +165,27 @@ public class ReturnsControllerIntegrationTest {
         ReturnsResponse indexResponse = objectMapper.readValue(
                 indexResult.getResponse().getContentAsString(), ReturnsResponse.class);
 
-        // Index should have higher future value due to higher rate
-        assertTrue(indexResponse.getProjection().getFutureValue() > 
-                   npsResponse.getProjection().getFutureValue());
+        // Index should have higher profit due to higher rate
+        assertTrue(indexResponse.getSavingsByDates().get(0).getProfit() > 
+                   npsResponse.getSavingsByDates().get(0).getProfit());
     }
 
     @Test
     public void testNPSTaxBenefitZeroSalary() throws Exception {
+        List<TransactionItem> transactions = Arrays.asList(
+                TransactionItem.builder().date("2023-10-12 20:15:30").amount(1000.0).build()
+        );
+
+        List<FilterPeriodK> kPeriods = Arrays.asList(
+                FilterPeriodK.builder().start("2023-10-12 20:15:30").end("2023-11-12 20:15:30").build()
+        );
+
         ReturnsRequest request = ReturnsRequest.builder()
-                .principal(50000.0)
-                .age(30.0)
-                .inflationRate(0.03)
-                .preTaxSalary(0.0)
+                .wage(0.0)
+                .inflation(3.0)
+                .age(30)
+                .transactions(transactions)
+                .k(kPeriods)
                 .build();
 
         String requestBody = objectMapper.writeValueAsString(request);
@@ -155,6 +199,6 @@ public class ReturnsControllerIntegrationTest {
         ReturnsResponse response = objectMapper.readValue(
                 result.getResponse().getContentAsString(), ReturnsResponse.class);
 
-        assertEquals(0.0, response.getProjection().getTaxBenefit());
+        assertEquals(0.0, response.getSavingsByDates().get(0).getTaxBenefit());
     }
 }
