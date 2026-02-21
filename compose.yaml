@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  blackrock-retirement-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: blackrock-retirement-system
+    ports:
+      - "5477:5477"
+    environment:
+      - JAVA_OPTS=-Xmx2g -Xms512m
+      - SERVER_PORT=5477
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5477/blackrock/challenge/v1/performance"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Monitoring container
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    restart: unless-stopped
+    depends_on:
+      - blackrock-retirement-api
